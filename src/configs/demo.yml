@@ -1,0 +1,16 @@
+# Single-image demo: is this image AI generated?
+# Run from the repo root:  python demo.py path/to/image.jpg [--config src/configs/demo.yml]
+
+model:
+  ckpt_path: model_data/final.ckpt   # Lightning checkpoint from the training scripts;
+                                       # the architecture is rebuilt from the hparams in it
+
+  # Siglip2 base model / image processor directory
+  siglip_checkpoint_path: model_data/siglip   # directory with the model and processor for Siglip2
+
+calibration_path: model_data/calibration.json   # bucket calibration table for this checkpoint
+
+device: cuda:0           # one device: "cuda:N", a bare index N, or "cpu"
+precision: bf16-mixed    # autocast for the forward pass, Lightning names: bf16-mixed | 16-mixed | 32
+
+output_path: logs/demo/prediction.json   # {"image", "prediction" (1 = AI generated, 0 = real), "confidence"}

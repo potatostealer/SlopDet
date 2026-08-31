@@ -1,0 +1,50 @@
+# Bucket calibration of one checkpoint on the CLEAN validation split, under the training augmentation mixture.
+# Run from the repo root:  python -m src.experiments.calibration [--config src/configs/calibration.yml]
+#
+# N rounds over the whole val set; round r augments every image on the fly with the online mixture, seeded
+# per file from augment.seed + r - 1, so every round sees different (but reproducible) augmentations. The model
+# outputs c = sigmoid(logit) in [0, 1] are pooled over the rounds into K equal buckets S_i and turned into a
+# lookup table P(c in S_i | Y) and, via Bayes' rule, P(Y | c in S_i) -- a calibrated confidence per bucket.
+# Results: <output.dir>/<run_name>/<folder_name>/calibration.json
+
+model:
+  ckpt_path: model_data/final.ckpt   # the released checkpoint (its table ships as model_data/calibration.json), or any
+                                     # Lightning checkpoint from the training scripts;
+                                                                    # the architecture is rebuilt from the hparams in it
+  siglip_checkpoint_path: model_data/siglip   # the Siglip2 base model / image processor directory (README "Downloads").
+                                 # null = the path recorded inside the checkpoint -- machine-specific for the
+                                 # released final.ckpt, so keep this set
+
+data:
+  ai_gen_dir: data/ai_gen_val   # the CLEAN val split, ground truth Y = 1 (AI generated); dataset layout: README "Downloads"
+  real_dir: data/real_val       # ground truth Y = 0 (real)
+  batch_size: 512
+  num_workers: 32
+  pin_memory: false
+
+augment:
+  # The online mixture of src/dataset/online_augment.py, exactly as the train_aug_* scripts apply it. Per image,
+  # independently: p_none untouched | p_single one augmentation | p_multi one chain. Round r draws every image's
+  # plan from blake2b(seed + r - 1 : stem), so round 1 with seed 1234 reproduces the deterministic val-mode
+  # augmentations of training, and every round is reproducible across re-runs.
+  p_none: 0.10
+  p_single: 0.40
+  p_multi: 0.50
+  seed: 1234
+  params_config: src/configs/augment.yml   # augment.params (option lists) and augment.multi.min_size/max_size
+
+calibration:
+  num_rounds: 1     # N: passes over the val set, each with its own per-file augmentations
+  num_buckets: 10    # K: S_i = [(i-1)/K, i/K), the last bucket also includes c = 1.0
+  prior_aigen: null   # P(Y = 1) for Bayes' rule; null = the empirical class proportion of the pooled predictions
+                     # (the val split is ~61% ai_gen, so 0.5 keeps the table deployment-neutral)
+  smoothing: 1.0     # Laplace add-alpha on every (bucket, class) count before the likelihoods, so an empty
+                     # bucket still gets a finite posterior; 0 disables it (empty buckets then report null)
+
+device: cuda:0           # one device: "cuda:N", a bare index N, or "cpu"; do NOT also set CUDA_VISIBLE_DEVICES (index shift)
+precision: bf16-mixed    # autocast for the forward pass, Lightning names: bf16-mixed | 16-mixed | 32 (training used bf16-mixed)
+threshold: 0.5           # only for the per-round accuracy / precision / recall / F1 report; the table itself is threshold-free
+
+output:
+  dir: logs/calibration  # <dir>/<run_name>/<folder_name>/calibration.json, rewritten after every round
+  folder_name: val_calibration

@@ -1,0 +1,38 @@
+# Training-free baseline: SigLIP2 pooled image embeddings + cosine K-NN over the train split.
+# Run from the repo root:
+#   python -m src.experiments.training_free      [--config src/configs/training_free.yml]   # queries = val split of dataset.yml
+#   python -m src.experiments.eval_training_free [--config src/configs/training_free.yml]   # queries = the test block below
+
+run_name: siglip2_knn      # results land in <output.dir>/<run_name>/<split>/k<K>_<weighting>/
+
+model:
+  checkpoint_path: model_data/siglip   # SigLIP2 so400m-patch16-naflex (README "Downloads"): frozen vision tower; its pooled image
+  attn_implementation: sdpa                                             # embedding (L2-normalised) is the feature
+
+knn:
+  k: 50                  # nearest reference (train) images per query, by cosine similarity (--k overrides)
+  weighting: uniform     # uniform = one vote per neighbour | similarity = each vote weighted by its cosine (clamped at 0)
+                         # majority wins; an exact tie is NOT classified but reported as indecisive
+
+data:
+  dataset_config: src/configs/dataset.yml   # train split = reference set (real 0 / ai_gen 1); val split = training_free.py queries
+  batch_size: 64
+  num_workers: 16
+  pin_memory: true
+
+test:
+  # eval_training_free.py only. Same key scheme as dataset.yml (real_img_{split}_ds_path / aigen_img_{split}_ds_path), split = test.
+  real_img_test_ds_path: data/real_test       # ground truth 0 = real (dataset layout: README "Downloads")
+  aigen_img_test_ds_path: data/ai_gen_test    # ground truth 1 = AI generated (positive class)
+
+embeddings:
+  cache_dir: leakage_out   # one emb_<dir>.npz per image directory, the format leakage_check.py / leak_removal.py write, so their
+                           # caches are reused; on later runs only files missing from the cache are embedded
+
+device: cuda:0           # one device: "cuda:N", a bare index N, or "cpu"; do NOT also set CUDA_VISIBLE_DEVICES (index shift)
+precision: bf16          # bf16 | 16 | 32: dtype of the vision tower weights and forward. bf16 is what the leakage_out caches were
+                         # computed with; 16 / 32 embeddings go to separate emb_<dir>_fp16 / _fp32 cache files
+
+output:
+  dir: logs/eval         # <dir>/<run_name>/<split>/k<K>_<weighting>/: metrics.json, failures.csv, indecisive.csv
+  show_failures: 10      # the N most confident failures of each kind (real -> AI gen, AI gen -> real) are printed

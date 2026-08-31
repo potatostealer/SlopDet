@@ -1,0 +1,42 @@
+# Comprehensive per-augmentation evaluation of one checkpoint on CLEAN (un-augmented) test images.
+# Run from the repo root:  python -m src.experiments.comprehensive_eval [--config src/configs/comprehensive_eval.yml]
+#
+# One round per single augmentation and option value (no chains) plus an un-augmented round; every round applies its
+# augmentation on the fly to every image under data.ai_gen_dir (ground truth 1) and data.real_dir (ground truth 0) and
+# records accuracy / precision / recall / F1. Results: <output.dir>/<run_name>/<checkpoint stem>/comprehensive_eval.json
+
+model:
+  ckpt_path: model_data/final.ckpt   # the released checkpoint (README "Downloads"), or any Lightning checkpoint from the training scripts;
+                                                                    # the architecture is rebuilt from the hparams in it
+  siglip_checkpoint_path: model_data/siglip   # the Siglip2 base model / image processor directory (README "Downloads").
+                                 # null = the path recorded inside the checkpoint -- machine-specific for the
+                                 # released final.ckpt, so keep this set
+
+data:
+  ai_gen_dir: data/ai_gen_test   # CLEAN (un-augmented) images, ground truth 1 = AI generated (positive class of P / R / F1)
+  real_dir: data/real_test       # CLEAN (un-augmented) images, ground truth 0 = real; dataset layout: README "Downloads"
+  batch_size: 512
+  num_workers: 4
+  pin_memory: false
+
+augment:
+  params_config: src/configs/augment.yml   # the grid is every option in its augment.params block, so it exhausts
+                                           # exactly the values the augmenters draw from:
+                                           #   jpeg    one round per quality      blur   one round per sigma
+                                           #   resize  one round per scale        noise  one round per sigma
+                                           #   crop    one round per fraction
+                                           #   jitter  the factors are continuous ([1 - x, 1 + x]) so the grid is the
+                                           #           range ends: brightness / contrast / saturation at 1 - x and 1 + x
+                                           #           one at a time (the other two factors at 1.0)
+  jitter_random: true                      # + one jitter round with all three factors drawn per file, exactly as the
+                                           #   offline / online augmenters draw them (seeded from `seed` below)
+  seed: 1234                               # per-file seed (blake2b(seed : stem), like the deterministic val mode) for
+                                           # the noise field and the random jitter factors: re-runs reproduce the pixels
+
+device: cuda:0           # one device: "cuda:N", a bare index N, or "cpu"; do NOT also set CUDA_VISIBLE_DEVICES (index shift)
+precision: bf16-mixed    # autocast for the forward pass, Lightning names: bf16-mixed | 16-mixed | 32 (training used bf16-mixed)
+threshold: 0.5           # sigmoid(logit) >= threshold -> predicted AI generated
+
+output:
+  dir: logs/eval         # <dir>/<run_name>/<checkpoint stem>/comprehensive_eval.json, rewritten after every round
+  folder_name: test_set

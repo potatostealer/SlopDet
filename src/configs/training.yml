@@ -1,0 +1,94 @@
+seed: 42
+run_name: nn_final_fix_gan_with_real_nn_2
+
+model:
+  checkpoint_path: model_data/siglip   # SigLIP2 so400m-patch16-naflex model + image processor (see README "Downloads")
+  attn_implementation: sdpa
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.2
+  targets: [q_proj, k_proj, v_proj, out_proj]   # any non-empty subset; [q_proj, v_proj] is the classic minimal choice
+
+qformer:
+  m: 1            # latent queries (1 = pooling)
+  n_layers: 3     # 2 self-attn + 1 final cross-attn with k=3
+  k: 3
+  n_heads: 16     # 1152 / 16 = 72 head_dim, matches Siglip2
+  dropout: 0.2
+  mlp_ratio: 4
+  grad_checkpointing: false
+
+classifier:
+  hidden_dims: [512, 64]      # 1152 -> 512 -> 64 -> 1
+  dropout: 0.2
+
+optimizer:
+  lr: 2.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+data:
+  dataset_config: src/configs/dataset.yml
+  batch_size_override: null   # null -> dataset.yml batch_size
+  num_workers: 32
+  pin_memory: false
+
+online_augment:
+  # train_aug_single.py / train_aug_ddp.py only; train_single.py / train_ddp.py ignore this block.
+  # The datasets are clean originals; every image is augmented on the fly in the collate. Per image, independently:
+  p_none: 0.10        # untouched
+  p_single: 0.40      # exactly one of jpeg | blur | resize | noise | jitter | crop, chosen uniformly; parameters
+                      # drawn uniformly from the lists in params_config (jitter factors continuous in [1-x, 1+x])
+  p_multi: 0.50       # one chain: a subset of size multi.min_size..multi.max_size drawn uniformly over ALL such
+                      # subsets (57 for 2..6, so larger sizes are likelier), applied in a uniformly random order
+  val_mode: deterministic   # deterministic = same mixture but fixed per file (blake2b(seed:stem)) so val/acc is
+                            # comparable across epochs and runs | none = clean val | stream = random like train
+  seed: 1234          # only the deterministic val plans depend on this; train draws from the per-worker/per-rank
+                      # stream that seed_everything(seed, workers=True) sets up (re-drawn every epoch)
+  run_name: nn_final_fix_gan_with_real_nn_2   # replaces run_name above (null = keep it): separate TB/checkpoint dirs
+  params_config: src/configs/augment.yml   # augment.params (option lists) and augment.multi.min_size/max_size are
+                                           # the single source of truth; input_dir, num_multi, distinct_subsets,
+                                           # output_* in that file are offline-only and ignored here
+
+classical:
+  # train_aug_classical_single.py / train_aug_classical_ddp.py only; the other train_* scripts ignore
+  # this block. Every (augmented) image is also run through ClassicalFeatureExtractor (classical_forensics.py) at its
+  # native resolution inside the DataLoader workers (~0.3 s per 1024 px image on the CPU: use 32 workers); the per-patch
+  # families become tokens via ClassicalTokenizer (fusion_tokenizer.py), the Siglip2 last_hidden_state tokens are
+  # projected by a shallow MLP to the same width, and the QFormer reads the concatenation.
+  patch: 256                # crop size of the extractor's patches (snapped down to a multiple of 16, floored at 64)
+  n_rich: 4                 # rich-texture crops per image
+  n_poor: 4                 # poor-texture crops per image -> n_rich + n_poor patch tokens per family
+  families: [spectral, dct, residual, wavelet, color]   # any non-empty subset; plus one global degradation token
+  d_model: null             # width the QFormer + MLP run at; null = Siglip2 hidden size (1152), so qformer.n_heads carries over
+  hidden_mult: 2            # ClassicalTokenizer per-family projection MLP: D_family -> hidden_mult * d_model -> d_model
+  family_dropout: 0.2      # P(a whole family is replaced by the mask token) per image while training
+  clamp: 8.0                # standardised features are clipped to [-clamp, clamp]
+  siglip_proj:
+    hidden_mult: 1          # shallow MLP on the Siglip2 tokens: 1152 -> hidden_mult * d_model -> d_model (+ LayerNorm)
+    dropout: 0.2
+  stats:                    # per-dimension mean / std every family is standardised with before its projection
+    dir: logs/classical_stats   # <dir>/<run_name>.npz: computed on rank 0 when missing (and saved into the checkpoint
+                                # as tokenizer buffers), loaded otherwise; a file made with another extractor config errors
+    num_images: 2048        # augmented train images the statistics are estimated on
+    recompute: false        # true = ignore an existing file
+  run_name: nn_final_fix_gan_with_real_nn_2   # replaces run_name / online_augment.run_name (null = keep):
+                                                           # separate TB / checkpoint / stats paths
+
+ddp:
+  # train_ddp.py only: physical GPUs, one DDP rank each (an externally set
+  # CUDA_VISIBLE_DEVICES takes precedence). batch_size is per device.
+  cuda_visible_devices: "0,1"   # <-- the physical GPUs to train on, one rank each
+
+trainer:
+  num_epochs: 5
+  accelerator: gpu
+  devices: [0]                # train_single.py only; do NOT also set CUDA_VISIBLE_DEVICES (index shift)
+  strategy: ddp              # switch to ddp later without code changes
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  log_every_n_steps: 5
+  log_dir: logs/tb
+  ckpt_dir: logs/checkpoints

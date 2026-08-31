@@ -1,0 +1,43 @@
+# Per image: one output per single augmentation (_a1.._a6, always in the order below) plus `num_multi` chains of a
+# random subset of >= 2 of them in random order (_a7..). The suffix is the only record of what was applied, so the
+# _a1.._a6 mapping is fixed:  _a1 jpeg  _a2 blur  _a3 resize  _a4 noise  _a5 jitter  _a6 crop.
+# Everything is seeded from blake2b(seed : filename): re-running reproduces the same pixels, and a run interrupted
+# half way resumes without redoing (or perturbing) what is already on disk.
+
+augment:
+  input_dir: "<IMAGE DIRECTORY>"
+  output_dir: null            # null = in place, next to the originals; a path = a separate directory
+  seed: 1234
+  num_multi: 3                # K multi-augmentation chains per image, on top of the six singles
+  extensions: [.png, .jpg, .jpeg, .webp]   # which files in input_dir count as sources
+  output_format: png          # png | jpg | webp | same (same = keep the input's extension)
+  suffix: _a                  # {stem}{suffix}{n}{ext}, e.g. 00007902a7b96e8c_a1.png
+  limit: null                 # only the first K source images (smoke tests)
+  workers: 0                  # processes; 0 = all cores
+  overwrite: false            # false = keep outputs that already exist (resume); true = re-render everything
+
+  params:                     # one value is drawn uniformly from each list, independently per output image
+    jpeg:
+      quality: [90, 70, 50, 30]      # in-memory JPEG round trip: the artefacts are baked into the pixels,
+                                     # the file itself is written in output_format (no second lossy pass)
+    blur:
+      sigma: [0.5, 1.0, 2.0]         # Pillow's GaussianBlur radius is the standard deviation
+    resize:
+      scale: [0.5, 0.25]             # downscale by this, then straight back up to the original size
+      down_filter: bicubic           # nearest | bilinear | bicubic | lanczos | box | hamming
+      up_filter: bicubic
+    noise:
+      sigma: [0.02, 0.05, 0.10]      # additive Gaussian, in [0, 1] units (sigma * 255 at 8 bit), clipped
+      per_channel: true              # false = one sample shared by R, G and B (luminance-like grain)
+    jitter:
+      brightness: 0.20               # each factor drawn independently from [1 - x, 1 + x], i.e. +/-20%
+      contrast: 0.20
+      saturation: 0.20
+    crop:
+      fraction: 0.80                 # centre crop to 80% of each side (64% of the area)
+      resize_back: false             # false = the output keeps the smaller size (profile-picture framing)
+
+  multi:                      # the chains
+    min_size: 2               # subset size drawn uniformly from [min_size, max_size], then a uniform subset
+    max_size: 6
+    distinct_subsets: true    # the K chains of one image use K different subsets of augmentations

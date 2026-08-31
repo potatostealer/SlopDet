@@ -1,0 +1,6 @@
+pillow
+numpy
+tqdm
+pyyaml
+transformers
+lightning

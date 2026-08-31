@@ -1,0 +1,25 @@
+# Single-device evaluation of one checkpoint on a labelled test set.
+# Run from the repo root:  python -m src.experiments.eval [--config src/configs/eval.yml]
+
+model:
+  ckpt_path: model_data/final.ckpt   # the released checkpoint (README "Downloads"), or any Lightning checkpoint from the training scripts;
+                                                                  # the architecture is rebuilt from the hparams stored in it
+  siglip_checkpoint_path: model_data/siglip   # the Siglip2 base model / image processor directory (README "Downloads").
+                                 # null = the path recorded inside the checkpoint -- machine-specific for the
+                                 # released final.ckpt, so keep this set
+
+data:
+  # Same key scheme as dataset.yml (real_img_{split}_ds_path / aigen_img_{split}_ds_path) with split = test.
+  real_img_test_ds_path: data/real_test      # ground truth 0 = real (dataset layout: README "Downloads")
+  aigen_img_test_ds_path: data/ai_gen_test   # ground truth 1 = AI generated (positive class)
+  batch_size: 64
+  num_workers: 8
+  pin_memory: true
+
+device: cuda:0           # one device: "cuda:N", a bare index N, or "cpu"; do NOT also set CUDA_VISIBLE_DEVICES (index shift)
+precision: bf16-mixed    # autocast for the forward pass, Lightning names: bf16-mixed | 16-mixed | 32 (training used bf16-mixed)
+threshold: 0.5           # sigmoid(logit) >= threshold -> predicted AI generated
+
+output:
+  dir: logs/eval         # results land in <dir>/<run_name>/<checkpoint stem>/: metrics.json and failures.csv
+  show_failures: 10      # the N most confident failures of each kind (real -> AI gen, AI gen -> real) are printed

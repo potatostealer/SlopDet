@@ -1,0 +1,9 @@
+# The four split directories: a split is a pair of flat image directories, real (label 0) and
+# AI generated (label 1). Download the dataset archives from the Google Drive link in the README
+# ("Downloads"), unzip them and point these keys at the resulting directories -- paths relative
+# to the repo root are fine (the README suggests unzipping everything under data/).
+real_img_train_ds_path: data/real_train      # real images, train split (label 0)
+aigen_img_train_ds_path: data/ai_gen_train   # AI generated images, train split (label 1)
+real_img_val_ds_path: data/real_val          # real images, val split
+aigen_img_val_ds_path: data/ai_gen_val       # AI generated images, val split
+batch_size: 64

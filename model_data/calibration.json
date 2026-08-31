@@ -1,0 +1,45 @@
+{
+  "num_buckets": 10,
+  "table": [
+    {
+      "predicted_label": "real",
+      "confidence": 0.9360057092708779
+    },
+    {
+      "predicted_label": "real",
+      "confidence": 0.5503929443852167
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.5273135907865425
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.6102349728509475
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.66560525585917
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.6680348288552126
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.7012995947366971
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.7338441816918482
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.7669915493732825
+    },
+    {
+      "predicted_label": "ai_gen",
+      "confidence": 0.9800301126124511
+    }
+  ]
+}
