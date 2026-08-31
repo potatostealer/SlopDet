@@ -1,11 +1,8 @@
 # doomscrollers
 
 Real vs. AI-generated image detection on top of a frozen SigLIP2 vision tower
-(`siglip2-so400m-patch16-naflex`). Two routes:
-
-- **Training-free** — SigLIP2 pooled image embeddings + cosine K-NN majority vote over the train set.
-- **Training** — LoRA adapters on the SigLIP2 encoder + a small QFormer + MLP head, trained with
-  Lightning on one GPU or with DDP, optionally with on-the-fly augmentation.
+(`siglip2-so400m-patch16-naflex`): LoRA adapters on the SigLIP2 encoder + a small QFormer + MLP head,
+trained with Lightning on one GPU or with DDP, optionally with on-the-fly augmentation.
 
 Labels everywhere: `0 = real`, `1 = AI generated` (the positive class for precision / recall / F1).
 
@@ -44,8 +41,8 @@ Everything needed to run the demo and the training comes from one [Google Drive 
    | `data/ai_gen_train` | AI generated images, train split (label 1) | `dataset.yml: aigen_img_train_ds_path` |
    | `data/real_val` | real images, val split | `dataset.yml: real_img_val_ds_path` |
    | `data/ai_gen_val` | AI generated images, val split | `dataset.yml: aigen_img_val_ds_path`, `calibration.yml` |
-   | `data/real_test` | real images, test split | `eval.yml`, `training_free.yml`, `comprehensive_eval.yml` |
-   | `data/ai_gen_test` | AI generated images, test split | `eval.yml`, `training_free.yml`, `comprehensive_eval.yml` |
+   | `data/real_test` | real images, test split | `eval.yml`, `comprehensive_eval.yml` |
+   | `data/ai_gen_test` | AI generated images, test split | `eval.yml`, `comprehensive_eval.yml` |
 
    If the unzipped directories carry different names, either rename them to the above or point the config keys at
    wherever you placed them (paths relative to the repo root are fine). A split is always a pair of flat image
@@ -104,11 +101,10 @@ classical-fusion details and the single-GPU variants.
 ## Layout
 
 ```
-src/configs/        dataset.yml  training.yml  augment.yml  training_free.yml  eval.yml  comprehensive_eval.yml
+src/configs/        dataset.yml  training.yml  augment.yml  eval.yml  comprehensive_eval.yml
 src/dataset/        image_dataset.py (dir -> (path, label)), dataloader.py, collate.py (SigLIP2 NaFlex processor),
                     augment.py (offline augmentation CLI), online_augment.py (same augmentations, in the collate)
-src/experiments/    training_free.py / eval_training_free.py   K-NN baseline on val / test
-                    train_single.py / train_ddp.py             clean training, 1 GPU / multi-GPU
+src/experiments/    train_single.py / train_ddp.py             clean training, 1 GPU / multi-GPU
                     train_aug_single.py / train_aug_ddp.py     training with on-the-fly augmentation
                     train_aug_classical_single.py / _ddp.py   the same, plus classical forensic features fused
                                                                into the QFormer input
@@ -140,10 +136,9 @@ override single values. The usual workflow: edit the yml, or copy it and pass th
 
 | File | Read by | What it sets |
 |---|---|---|
-| `dataset.yml` | all `train_*` scripts, `training_free.py` | the four image directories `real_img_{train,val}_ds_path` / `aigen_img_{train,val}_ds_path` and `batch_size` |
+| `dataset.yml` | all `train_*` scripts | the four image directories `real_img_{train,val}_ds_path` / `aigen_img_{train,val}_ds_path` and `batch_size` |
 | `training.yml` | `train_*` scripts | `run_name`, SigLIP2 `model.checkpoint_path`, `lora` / `qformer` / `classifier` / `optimizer` hyper-parameters, `data` (points at `dataset.yml`, workers), `trainer` (epochs, precision, GPU, log / ckpt dirs); `online_augment` is read only by the `train_aug_*` scripts, `classical` only by the `train_aug_classical_single*` scripts and `ddp` only by the `*_ddp` scripts |
 | `augment.yml` | `augment.py`; its `params` + `multi` blocks also by `train_aug_*` | offline run settings (`input_dir`, `output_dir`, `num_multi`, `workers`, `overwrite`, ...) and the augmentation parameter lists |
-| `training_free.yml` | `training_free.py`, `eval_training_free.py` | `knn.k` / `knn.weighting`, reference set via `data.dataset_config`, `test` directories, `embeddings.cache_dir`, `device`, `precision`, `output.dir` |
 | `eval.yml` | `eval.py` | `model.ckpt_path`, `data.{real,aigen}_img_test_ds_path`, `device`, `precision`, `threshold`, `output.dir` |
 | `comprehensive_eval.yml` | `comprehensive_eval.py` | `model.ckpt_path`, clean `data.ai_gen_dir` (label 1) / `data.real_dir` (label 0), `augment.params_config` (the grid = every option in its `params` block), `augment.jitter_random`, `augment.seed`, `device`, `precision`, `threshold`, `output.dir` |
 
@@ -152,13 +147,12 @@ Conventions:
 - **A split is a pair of flat image directories**: `real_img_<split>_ds_path` (label 0) and
   `aigen_img_<split>_ds_path` (label 1). `.png .jpg .jpeg .webp` files are picked up.
 - **Configs reference each other by path** (relative to the repo root): `training.yml` →
-  `data.dataset_config: src/configs/dataset.yml` and `online_augment.params_config: src/configs/augment.yml`;
-  `training_free.yml` → `data.dataset_config`.
+  `data.dataset_config: src/configs/dataset.yml` and `online_augment.params_config: src/configs/augment.yml`.
 - **`run_name` decides where outputs land**: `logs/tb/<run_name>/`, `logs/checkpoints/<run_name>/`,
   `logs/eval/<run_name>/`. `online_augment.run_name` replaces it for augmented runs so they do not
   collide with the clean baseline.
 - **GPU selection**: single-device scripts take the GPU from the config (`trainer.devices: [N]` in
-  `training.yml`, `device: cuda:N` in `eval.yml` / `training_free.yml`) — do *not* also set
+  `training.yml`, `device: cuda:N` in `eval.yml`) — do *not* also set
   `CUDA_VISIBLE_DEVICES`, the indices would shift. DDP uses `ddp.cuda_visible_devices` (one rank per GPU);
   an externally set `CUDA_VISIBLE_DEVICES` takes precedence over it.
 - `model.checkpoint_path` must hold the HF SigLIP2 NaFlex model **and** its image processor.
@@ -199,27 +193,6 @@ so an in-place run can safely be repeated.
 
 The `params` and `multi` blocks of this file are also the single source of truth for on-the-fly
 augmentation during training (below).
-
-## Training-free baseline
-
-Nothing is trained: each image is embedded once with the frozen SigLIP2 pooled embedding, and every
-query is labelled by a majority vote of its `knn.k` most similar train images (cosine similarity). Exact
-ties are reported as *indecisive* instead of guessed.
-
-```bash
-python -m src.experiments.training_free                          # queries = val split of dataset.yml
-python -m src.experiments.eval_training_free                     # queries = test dirs in training_free.yml
-python -m src.experiments.training_free --limit 64 --device 0    # smoke test: 64 images per directory
-python -m src.experiments.training_free --k 20 --weighting similarity   # votes weighted by cosine
-```
-
-The reference set is the train split of `dataset.yml`; the test directories are the `test:` block of
-`training_free.yml`. Embeddings are cached per directory as `emb_<dir>.npz` in `embeddings.cache_dir`
-(default `leakage_out/`, shared with `leakage_check.py` / `leak_removal.py`), so later runs only embed
-files missing from the cache.
-
-Output: confusion matrix, coverage and accuracy / precision / recall / F1 on stdout, plus
-`logs/eval/<run_name>/<split>/k<K>_<weighting>/{metrics.json,failures.csv,indecisive.csv}`.
 
 ## Training
 
