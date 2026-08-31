@@ -1,10 +1,32 @@
-# doomscrollers
+# SlopDet: AI-generated image detector with explainability
 
-Real vs. AI-generated image detection on top of a frozen SigLIP2 vision tower
-(`siglip2-so400m-patch16-naflex`): LoRA adapters on the SigLIP2 encoder + a small QFormer + MLP head,
-trained with Lightning on one GPU or with DDP, optionally with on-the-fly augmentation.
+## Project Overview
 
-Labels everywhere: `0 = real`, `1 = AI generated` (the positive class for precision / recall / F1).
+### The problem
+
+Human observers are unreliable at distinguishing AI-generated images from authentic ones, and that gap widens with every generation of image synthesis models. A verdict alone is not enough: a detector that cannot show its reasoning is difficult to trust and impossible to audit.
+
+### Our solution
+
+**SlopDet** is a prototype detection tool that returns three things for every image submitted: a prediction, a calibrated confidence score, and a heatmap overlay identifying the regions that drove the decision.
+
+### Model architecture
+
+SlopDet is built on **SigLIP**, a strong vision-language backbone, adapted for our task through:
+
+- **LoRA fine-tuning**, which specialises the backbone efficiently without full-parameter retraining
+- **A Q-Former and MLP head**, which aggregate patch-level evidence into the final classification
+
+### Training and robustness
+
+We trained on a large, curated dataset spanning multiple generator families. We further applied transformations that would alter the aspect ratio and resolution of the data to prevent the model from learning dimension induced artefacts as shortcuts. To ensure the model holds up on images encountered in the wild rather than only on pristine inputs, we applied online augmentation throughout training — blur, compression, colour jitter, cropping, and rescaling — sampled across a range of severities. This exposes the model to the degradations typical of images that have been shared, re-encoded, and resized across platforms.
+
+### Interpretability
+
+The heatmap is produced by projecting the **Q-Former attention layer** directly back onto the source image. Because the attention weights are already patch-indexed, this correspondence is direct rather than reconstructed, which makes the resulting visualisation a faithful account of where the model actually looked.
+
+We extend this with an **MLLM integration** that inspects the highest-relevance patches and generates a preliminary natural-language explanation of what makes those regions suspect. The result is a decision a reviewer can interrogate: not just *what* the model concluded, but *where* it looked and *why* that evidence mattered.
+
 
 ## Setup
 
@@ -346,3 +368,50 @@ python dataset_generation/image_generator.py --selftest              # resolutio
 
 Both stages are resumable (existing outputs are skipped; `--force` redoes them) and print a per-file status plus
 a final count.
+
+## Reflections and Limitations
+
+### Methodological rigour
+
+Our component comparisons were guided by experimental reasoning and rapid shortlisting rather than formal ablation studies. The pipeline we selected is therefore well-motivated but not demonstrably optimal. This reflects a deliberate trade-off against the project timeline: by narrowing early to a lightweight, high-potential approach, we were able to research, implement, and deliver a functional prototype with satisfactory performance within the window available for demonstration. Given more time, we would run a full ablation study to isolate the contribution of each component and confirm the strongest end-to-end configuration.
+
+### Architectural choice: Q-Former over CLIP feature extraction
+
+We evaluated a CLIP + feature extraction pipeline as an alternative and ultimately decided against it on interpretability grounds. The Q-Former exposes an attention layer that encodes patch-level information, which maps directly back onto the input image and allows us to generate our heatmaps. Feature extraction provides no equivalent route back to the original content. We could engineer such a link, but doing so would consume development time and produce a more indirect form of attribution, which is harder to defend than the direct correspondence the Q-Former attention already gives us. For a system whose output needs to be inspected and trusted by a human reviewer, direct attribution was the more valuable property.
+
+### Weaker performance on GAN-generated images
+
+Testing across generator families surfaced a consistent weakness: the model performs noticeably worse on GAN-generated images than on outputs from other generator classes. Visual inspection offers a partial explanation, as a subset of GAN samples closely resemble authentic photographs and appear to leave fewer of the artefacts our model relies on. Addressing this would be a priority for future work, likely through GAN-weighted training data, targeted augmentation, or features less dependent on the artefact patterns characteristic of diffusion-based generators.
+
+### Supporting documentation
+
+Some comparison tables that informed the many smaller design decisions made across our iterations are provided below.
+
+## Ablation Study
+We perform an ablation study to compare the performance of our proposed approach (SigLIP2 + LoRA + QFormer + MLP) against two other approaches: a naive SVM/logistic regression using SigLIP features, and a classical FFT+GLCM SVM/RBF approach. The evaluation is conducted on two datasets: COCO VAL 2017 (Real) + DALLE3-Advanced (Fake) and CIFAKE Test (Real) + CIFAKE Test (Fake). We chose the CIFAKE dataset in addition to the given test set as the CIFAKE dataset has images with extremely low (32 x 32) resolution, which serves as a good stress test. All models are trained on the same dataset as described in other parts of our post. We evaluate the models under various image transformations, including JPEG compression, Gaussian blur, cropping, and resizing.
+
+The reported values are AUROC scores, i.e. the area under the receiver operating characteristic curve, which is a measure of how well the model can distinguish between real and AI-generated images. A score of 1.00 indicates perfect classification, while a score of 0.50 indicates random guessing.
+
+**Evaluation Dataset**: COCO VAL 2017 (Real) + DALLE3-Advanced (Fake)
+
+| Method | Clean | JPEG q30 | Blur σ=2 | Crop 80% | Resize 0.25 |
+|---|---|---|---|---|---|
+| (a) SigLIP2 + LoRA + QFormer + MLP | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| (b) Naive SVM/logreg SigLIP | 0.99 | 1.00 | 0.98 | 0.98| 0.99 |
+| (c) Classical FFT+GLCM SVM/RBF | 0.87 | 0.48 | 0.87 | 0.57 | 0.87 |
+
+**Evaluation Dataset**: CIFAKE Test (Real) + CIFAKE Test (Fake)
+
+| Method | Clean | JPEG q30 | Blur σ=2 | Crop 80% | Resize 0.25 |
+|---|---|---|---|---|---|
+| (a) SigLIP2 + LoRA + QFormer + MLP | 0.99 | 0.99 | 0.97 | 0.99 | 0.96 |
+| (b) Naive SVM/logreg SigLIP | 0.89 | 0.85 | 0.80 | 0.86| 0.78 |
+| (c) Classical FFT+GLCM SVM/RBF | 0.90 | 0.85 | 0.62 | 0.78 | 0.62 |
+
+
+## Team member contributions
+Hu Man Keat: Explore CLIP + NPR approach; implement frontend and backend (explainability of verdict via VLM) deployment of demo site; report and poster creation.
+
+Jordan Low Jin Yi: Explore classical approaches; build ablation harness; report, video and report creation.
+
+Teoh Tze Tzun: Explore SigLIP + QFormer approach; dataset creation; build evaluation pipelines and training pipelines; video and report creation.
