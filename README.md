@@ -317,17 +317,9 @@ real images only).
 
 | Command | Purpose |
 |---|---|
-| `python -m src.dataset.dataset_sanity_check` | plot the first images of a few train / val batches with their labels to `logs/` |
 | `python leakage_check.py`, `python leak_removal.py` | find (and delete) train images that leak into val / test, by byte / pixel hash or SigLIP cosine > 0.9 |
-| `python benchmark_dataload.py` | dataloader throughput sweep over worker counts |
 | `python profile_dims.py` | image size / format statistics per dataset split |
 | `python sample_dims.py` | copy K images (default 2) from each of the most common resolutions (those covering 90 % of the images) of one directory into `dim_samples/`, with `manifest.csv` / `buckets.csv` |
-| `python sample_outofdim.py` | build the out-of-dimension real validation set: one header-only pass over the Open Images parquet shards on NFS (~70 min, resumable, cached per shard in `--scan-dir`) keeps every photo whose resolution is far from `real_all_toremove_train`'s (default: at most 0.5 % of the training images within ±15 % on both sides), drops stems already used by any dataset under `--exclude-root`, samples 20 k of them and, with `--execute`, copies them into `real_outofdimsample_val/`; other thresholds re-select in seconds without a rescan |
-| `python inspect_siglip.py` | how the collate + SigLIP2 NaFlex processor + model handle varying resolutions: resize rule, padding, batch independence, augment collate, position embeddings — each claim checked on the `dim_samples/` images; writes the model's-eye canvases to `dim_samples/_siglip_view/` |
-| `python qformer_attention.py` | per-head attention of the QFormer's final cross-attention layer (checkpoint from `eval.yml` or `--ckpt`) drawn on the rescaled + padded token canvas and un-scaled onto the original image for every `dim_samples/` file → `dim_samples/_attention/` (`*__tokens.png`, `*__original.png`, `attention.npz`) |
-| `python qformer_attention_pair.py` | N real/AI pairs sharing a stem in `real_all_val` / `ai_gen_all_val`: head-mean QFormer attention on the token canvas for the clean pair and for 3 augmentation plans applied identically to both → `comparisons/` (`<stem>__clean.png`, `<stem>__augK.png`, `summary.csv`) |
-| `python self_attention_pair.py` | the same pairs / plans / figures, but the heat is the attention each token *receives* in the SigLIP2 vision encoder's self-attention (all 27 layers × 16 heads, LoRA applied; `--agg rollout` for attention rollout) → `comparisons_self_attention/`; `summary.csv` adds the outer-ring share per layer |
-| `python self_attention_noborder_pair.py` | `self_attention_pair.py` with the `--rings 2` outermost rings of patches dropped from the *visualisation* softmax (inference untouched), to look past border/register tokens; `--queries interior` also drops them as queries → `comparisons_self_attention_noborder/` |
 
 ## Dataset generation (API image synthesis)
 
@@ -407,7 +399,6 @@ The reported values are AUROC scores, i.e. the area under the receiver operating
 | (a) SigLIP2 + LoRA + QFormer + MLP | 0.99 | 0.99 | 0.97 | 0.99 | 0.96 |
 | (b) Naive SVM/logreg SigLIP | 0.89 | 0.85 | 0.80 | 0.86| 0.78 |
 | (c) Classical FFT+GLCM SVM/RBF | 0.90 | 0.85 | 0.62 | 0.78 | 0.62 |
-
 
 ## Team member contributions
 Hu Man Keat: Explore CLIP + NPR approach; implement frontend and backend (explainability of verdict via VLM) deployment of demo site; report and poster creation.
