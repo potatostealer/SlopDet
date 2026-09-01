@@ -83,7 +83,7 @@ python demo.py path/to/image.jpg
 | Key | What it is |
 |---|---|
 | `model.ckpt_path` | Lightning checkpoint of a `LoraQFormerDetector`; the architecture is rebuilt from the hyper-parameters stored inside it |
-| `model.siglip_checkpoint_path` | `null` = the SigLIP2 base model / image processor directory recorded in the checkpoint; set it only to relocate that directory |
+| `model.siglip_checkpoint_path` | the SigLIP2 base model / image processor directory |
 | `calibration_path` | JSON bucket calibration table for this checkpoint: `num_buckets` (K) and `table`, K rows of `{predicted_label, confidence}` indexed by `min(floor(c * K), K - 1)` |
 | `device` | `cuda:N`, a bare index `N`, or `cpu` |
 | `precision` | autocast for the forward pass: `bf16-mixed` \| `16-mixed` \| `32` |
